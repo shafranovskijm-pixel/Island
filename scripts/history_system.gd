@@ -19,6 +19,8 @@ func _init():
     load_history()
 
 func record(day: int, hour: float, event_type: String, text: String, weights: Dictionary = {}):
+    if event_type == "arrival" and not events.is_empty():
+        return
     events.append({
         "day": day,
         "hour": hour,
