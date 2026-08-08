@@ -27,6 +27,10 @@ jobs:
         shell: bash
         run: godot --headless --path . --editor --quit
 
+      - name: Run systemic smoke test
+        shell: bash
+        run: godot --headless --path . --script res://scripts/smoke_test.gd
+
       - name: Export Android debug APK
         shell: bash
         run: |
