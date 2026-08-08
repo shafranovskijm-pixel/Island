@@ -1,6 +1,6 @@
 [application]
 config/name="Island Life"
-run/main_scene="res://scenes/game_v04.tscn"
+run/main_scene="res://scenes/game_v05.tscn"
 config/features=PackedStringArray("4.6")
 
 [display]
