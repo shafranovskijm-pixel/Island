@@ -1,5 +1,7 @@
 extends RefCounted
 
+const SAVE_PATH := "user://player_history.json"
+
 var events: Array = []
 var lifestyle := {
     "homeless": 0.0,
@@ -13,6 +15,9 @@ var lifestyle := {
     "social": 0.0
 }
 
+func _init():
+    load_history()
+
 func record(day: int, hour: float, event_type: String, text: String, weights: Dictionary = {}):
     events.append({
         "day": day,
@@ -23,6 +28,44 @@ func record(day: int, hour: float, event_type: String, text: String, weights: Di
     for key in weights.keys():
         if lifestyle.has(key):
             lifestyle[key] += float(weights[key])
+    if events.size() > 500:
+        events.pop_front()
+    save_history()
+
+func save_history():
+    var payload := {
+        "version": 1,
+        "events": events,
+        "lifestyle": lifestyle
+    }
+    var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+    if file:
+        file.store_string(JSON.stringify(payload))
+
+func load_history():
+    if not FileAccess.file_exists(SAVE_PATH):
+        return
+    var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
+    if not file:
+        return
+    var parsed = JSON.parse_string(file.get_as_text())
+    if typeof(parsed) != TYPE_DICTIONARY:
+        return
+    var loaded_events = parsed.get("events", [])
+    if typeof(loaded_events) == TYPE_ARRAY:
+        events = loaded_events
+    var loaded_lifestyle = parsed.get("lifestyle", {})
+    if typeof(loaded_lifestyle) == TYPE_DICTIONARY:
+        for key in lifestyle.keys():
+            if loaded_lifestyle.has(key):
+                lifestyle[key] = float(loaded_lifestyle[key])
+
+func reset_history():
+    events.clear()
+    for key in lifestyle.keys():
+        lifestyle[key] = 0.0
+    if FileAccess.file_exists(SAVE_PATH):
+        DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 
 func dominant_path() -> String:
     var best_key := "homeless"
