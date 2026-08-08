@@ -1,0 +1,42 @@
+name: Godot Android Debug
+
+on:
+  push:
+    branches:
+      - v0.4-social-sandbox
+  workflow_dispatch:
+
+jobs:
+  validate-and-build:
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.6.3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare export templates
+        shell: bash
+        run: |
+          mkdir -p ~/.local/share/godot/export_templates
+          if [ -d /root/.local/share/godot/export_templates/4.6.3.stable ]; then
+            cp -a /root/.local/share/godot/export_templates/4.6.3.stable ~/.local/share/godot/export_templates/
+          fi
+
+      - name: Validate Godot project
+        shell: bash
+        run: godot --headless --path . --editor --quit
+
+      - name: Export Android debug APK
+        shell: bash
+        run: |
+          mkdir -p builds/android
+          godot --headless --path . --export-debug "Android" builds/android/Island-Life-debug.apk
+          test -s builds/android/Island-Life-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Island-Life-Android-debug
+          path: builds/android/Island-Life-debug.apk
+          if-no-files-found: error
