@@ -17,35 +17,113 @@ concurrency:
 
 jobs:
   android-apk:
-    runs-on: ubuntu-latest
-    container:
-      image: barichello/godot-ci:4.6.3
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare Godot export templates
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Ensure Android SDK packages
         shell: bash
         run: |
-          mkdir -p ~/.local/share/godot/export_templates
-          if [ -d /root/.local/share/godot/export_templates/4.6.3.stable ]; then
-            cp -a /root/.local/share/godot/export_templates/4.6.3.stable ~/.local/share/godot/export_templates/
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           fi
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platform-tools" "build-tools;35.0.1" "platforms;android-35"
 
-      - name: Validate project parses
-        run: godot --headless --path . --editor --quit
+      - name: Download Godot 4.6.3 and export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL "https://downloads.godotengine.org/?flavor=stable&platform=macos.universal&slug=macos.universal.zip&version=4.6.3" -o "$RUNNER_TEMP/godot.zip"
+          curl -fL "https://downloads.godotengine.org/?flavor=stable&platform=templates&slug=export_templates.tpz&version=4.6.3" -o "$RUNNER_TEMP/export_templates.tpz"
+          mkdir -p "$RUNNER_TEMP/godot" "$RUNNER_TEMP/godot-templates"
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP/godot"
+          unzip -q "$RUNNER_TEMP/export_templates.tpz" -d "$RUNNER_TEMP/godot-templates"
+          xattr -dr com.apple.quarantine "$RUNNER_TEMP/godot/Godot.app" 2>/dev/null || true
+          chmod +x "$RUNNER_TEMP/godot/Godot.app/Contents/MacOS/Godot"
+          TEMPLATE_DIR="$HOME/Library/Application Support/Godot/export_templates/4.6.3.stable"
+          mkdir -p "$TEMPLATE_DIR"
+          cp -R "$RUNNER_TEMP/godot-templates/templates/." "$TEMPLATE_DIR/"
+          echo "GODOT_BIN=$RUNNER_TEMP/godot/Godot.app/Contents/MacOS/Godot" >> "$GITHUB_ENV"
+
+      - name: Create Android debug keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/island-debug.keystore"
+          keytool -genkeypair -v -keystore "$KEYSTORE" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Island Life,C=US"
+          echo "DEBUG_KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
+
+      - name: Initialize Godot editor settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GODOT_BIN" --headless --editor --path . --quit
+          SETTINGS="$(find "$HOME/Library/Application Support/Godot" -type f -name 'editor_settings-*.tres' | head -n 1)"
+          test -n "$SETTINGS"
+          echo "GODOT_EDITOR_SETTINGS=$SETTINGS" >> "$GITHUB_ENV"
+
+      - name: Configure Godot Android SDK paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          path = Path(os.environ['GODOT_EDITOR_SETTINGS'])
+          text = path.read_text()
+          values = {
+              'export/android/java_sdk_path': os.environ['JAVA_HOME'],
+              'export/android/android_sdk_path': os.environ['ANDROID_HOME'],
+              'export/android/debug_keystore': os.environ['DEBUG_KEYSTORE'],
+              'export/android/debug_keystore_user': 'androiddebugkey',
+              'export/android/debug_keystore_pass': 'android',
+          }
+          for key, value in values.items():
+              line = f'{key} = "{value}"'
+              pattern = rf'(?m)^{re.escape(key)} = .*?$'
+              if re.search(pattern, text):
+                  text = re.sub(pattern, line, text)
+              else:
+                  text += '\n' + line
+          path.write_text(text)
+          print(path)
+          PY
+          "$GODOT_BIN" --headless --editor --path . --quit
 
       - name: Validate current mobile prototype
-        run: godot --headless --path . --script res://prototype/prototype_v04_smoke_test.gd
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GODOT_BIN" --headless --path . --script res://prototype/prototype_v04_smoke_test.gd
 
       - name: Boot current main scene
-        run: godot --headless --path . --quit-after 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GODOT_BIN" --headless --path . --quit-after 5
 
       - name: Export signed arm64 Android debug APK
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p builds/android
-          godot --headless --path . --export-debug "Android" builds/android/Island-Life-Prototype-v04.apk
+          "$GODOT_BIN" --headless --path . --export-debug "Android" builds/android/Island-Life-Prototype-v04.apk
           test -s builds/android/Island-Life-Prototype-v04.apk
+          unzip -t builds/android/Island-Life-Prototype-v04.apk >/dev/null
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | tail -n 1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs builds/android/Island-Life-Prototype-v04.apk
 
       - name: Upload playable APK
         uses: actions/upload-artifact@v4
