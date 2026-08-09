@@ -3,6 +3,7 @@ extends SceneTree
 const Prototype = preload("res://prototype/prototype_v05.gd")
 const PrototypeScene = preload("res://prototype/prototype_v05.tscn")
 const WorldArt = preload("res://prototype/art/coastal_village.svg")
+const CI_MARKER = "PROTOTYPE_V05_VISUAL_SMOKE_OK"
 
 func _init():
     assert(WorldArt != null)
@@ -27,5 +28,13 @@ func _init():
     scene_instance.free()
     p.free()
 
-    print("PROTOTYPE_V05_VISUAL_SMOKE_OK")
+    _mark_success(CI_MARKER)
     quit(0)
+
+func _mark_success(marker):
+    var marker_path = "res://.ci_%s.ok" % marker
+    var file = FileAccess.open(marker_path, FileAccess.WRITE)
+    assert(file != null)
+    file.store_string(marker)
+    file.close()
+    print(marker)
