@@ -1,11 +1,10 @@
 workflows:
   island-v05-android:
     name: Island v05 Android APK
-    instance_type: linux
+    instance_type: mac_mini_m2
     max_build_duration: 60
 
     environment:
-      ubuntu: 24.04
       java: 17
       vars:
         GODOT_VERSION: "4.6.3"
@@ -35,6 +34,21 @@ workflows:
           grep -F 'version/name="0.5"' export_presets.cfg
           echo "Checkout is aligned with prototype_v05 and ARM64 Android export."
 
+      - name: Prepare Android SDK
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          test -n "${ANDROID_SDK_ROOT:-}"
+          test -d "$ANDROID_SDK_ROOT"
+          test -n "${JAVA_HOME:-}"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          if [ ! -x "$ANDROID_SDK_ROOT/build-tools/35.0.1/apksigner" ]; then
+            yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+            "$SDKMANAGER" "platform-tools" "build-tools;35.0.1" "platforms;android-35"
+          fi
+          "$SDKMANAGER" --list_installed | grep -E 'build-tools;35.0.1|platforms;android-35' || true
+
       - name: Install Godot 4.6.3 and export templates
         script: |
           #!/usr/bin/env bash
@@ -49,20 +63,20 @@ workflows:
           mkdir -p "$GODOT_DIR" "$TEMPLATE_TMP"
 
           curl --retry 5 --retry-delay 3 --fail --location \
-            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" \
+            "https://downloads.godotengine.org/?flavor=stable&platform=macos.universal&slug=macos.universal.zip&version=${GODOT_VERSION}" \
             --output "$GODOT_ZIP"
           curl --retry 5 --retry-delay 3 --fail --location \
-            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" \
+            "https://downloads.godotengine.org/?flavor=stable&platform=templates&slug=export_templates.tpz&version=${GODOT_VERSION}" \
             --output "$TEMPLATE_ZIP"
 
           unzip -q "$GODOT_ZIP" -d "$GODOT_DIR"
           unzip -q "$TEMPLATE_ZIP" -d "$TEMPLATE_TMP"
 
-          GODOT_BIN="$(find "$GODOT_DIR" -maxdepth 1 -type f -name 'Godot_v*_linux.x86_64' | head -n 1)"
-          test -n "$GODOT_BIN"
-          chmod +x "$GODOT_BIN"
+          GODOT_BIN="$GODOT_DIR/Godot.app/Contents/MacOS/Godot"
+          test -x "$GODOT_BIN"
+          xattr -dr com.apple.quarantine "$GODOT_DIR/Godot.app" 2>/dev/null || true
 
-          TEMPLATE_DEST="$HOME/.local/share/godot/export_templates/$GODOT_TEMPLATE_VERSION"
+          TEMPLATE_DEST="$HOME/Library/Application Support/Godot/export_templates/$GODOT_TEMPLATE_VERSION"
           mkdir -p "$TEMPLATE_DEST"
           cp -R "$TEMPLATE_TMP/templates/." "$TEMPLATE_DEST/"
 
@@ -95,13 +109,9 @@ workflows:
           #!/usr/bin/env bash
           set -euo pipefail
 
-          test -n "${ANDROID_SDK_ROOT:-}"
-          test -d "$ANDROID_SDK_ROOT"
-          test -n "${JAVA_HOME:-}"
-
           "$GODOT_BIN" --headless --editor --path . --quit
 
-          SETTINGS="$(find "$HOME/.config/godot" -type f -name 'editor_settings-*.tres' | head -n 1)"
+          SETTINGS="$(find "$HOME/Library/Application Support/Godot" -type f -name 'editor_settings-*.tres' | head -n 1)"
           test -n "$SETTINGS"
 
           python3 - "$SETTINGS" <<'PY'
@@ -178,13 +188,13 @@ workflows:
           test -s "$APK_PATH"
           unzip -t "$APK_PATH" >/dev/null
 
-          APKSIGNER="$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.1/apksigner"
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs "$APK_PATH"
 
           echo "APK built successfully:"
           ls -lh "$APK_PATH"
-          sha256sum "$APK_PATH" | tee builds/android/Island-Life-Prototype-v05.apk.sha256
+          shasum -a 256 "$APK_PATH" | tee builds/android/Island-Life-Prototype-v05.apk.sha256
 
     artifacts:
       - builds/android/Island-Life-Prototype-v05.apk
