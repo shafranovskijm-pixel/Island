@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - v0.8-art-apk
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
