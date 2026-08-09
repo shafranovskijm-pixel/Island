@@ -35,6 +35,11 @@ func current_player_case()->Dictionary:
         if str(c.get("primary_suspect",""))=="player" and str(c.get("status","")) not in ["cold","closed"]:return c
     return {}
 
+func _resolve_case_record(case_id:String,outcome:String):
+    for i in investigations.cases.size():
+        if str(investigations.cases[i].get("id",""))!=case_id:continue
+        investigations.cases[i]["status"]="closed";investigations.cases[i]["justice_outcome"]=outcome;investigations.cases[i]["closed_day"]=day;return
+
 func request_trial():
     var c=current_player_case();if c.is_empty():_notify("Нет активного дела против тебя.");return
     if not bool(justice.state.get("trial_pending",false)):_notify("Сначала стража должна официально задержать тебя.");return
@@ -42,6 +47,8 @@ func request_trial():
     copy["evidence_score"]=maxf(0,float(scores.get("evidence",0))-evidence_actions.defense_modifier(str(c.get("id",""))))
     copy["witness_score"]=float(scores.get("witness",0))
     var result=justice.resolve_trial(copy,reputation,influence,coins)
+    if not bool(result.get("ok",false)):_notify(str(result.get("reason","Суд не состоялся.")));return
+    _resolve_case_record(str(c.get("id","")),"guilty" if bool(result.get("guilty",false)) else "acquitted")
     if bool(result.get("guilty",false)):_notify("Виновен. Заключение %d дн., штраф %d."%[result.get("jail_days",0),result.get("fine",0)])
     else:_notify("Суд оправдал тебя из-за недостатка доказательств.")
 
@@ -56,8 +63,14 @@ func destroy_first_evidence():
     var r=evidence_actions.destroy_evidence(c,0);_notify("Улика уничтожена." if bool(r.get("ok",false)) else str(r.get("reason","Не получилось.")))
 
 func bribe_guard():
-    var result=justice.attempt_bribe(coins,int(skills.get("charm",0)));if not bool(result.get("ok",false)):_notify(str(result.get("reason","Не получилось.")));return
-    coins-=int(result.get("cost",0));wanted+=0 if bool(result.get("success",false)) else 1;_notify("Взятка принята." if bool(result.get("success",false)) else "Взятку отвергли. Стало только хуже.")
+    var c=current_player_case();var result=justice.attempt_bribe(coins,int(skills.get("charm",0)));if not bool(result.get("ok",false)):_notify(str(result.get("reason","Не получилось.")));return
+    coins-=int(result.get("cost",0))
+    if bool(result.get("success",false)):
+        if not c.is_empty():
+            c["status"]="cold";c["bribed_day"]=day
+        _notify("Взятка принята. Активное расследование временно остановилось.")
+    else:
+        wanted+=1;_notify("Взятку отвергли. Стало только хуже.")
 
 func escape_jail():
     var r=justice.attempt_escape(int(skills.get("stealth",0)));if not bool(r.get("ok",false)):_notify(str(r.get("reason","Не получилось.")));return
