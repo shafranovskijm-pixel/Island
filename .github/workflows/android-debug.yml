@@ -1,81 +1,43 @@
-name: Godot Android Debug
+name: Playable Prototype Android
 
 on:
   push:
     branches:
-      - v0.4-social-sandbox
       - v0.7-locations
   workflow_dispatch:
 
 jobs:
-  validate-and-build:
+  prototype-build:
     runs-on: ubuntu-latest
     container:
       image: barichello/godot-ci:4.6.3
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Prepare export templates
         shell: bash
         run: |
           mkdir -p ~/.local/share/godot/export_templates
-          if [ -d /root/.local/share/godot/export_templates/4.6.3.stable ]; then cp -a /root/.local/share/godot/export_templates/4.6.3.stable ~/.local/share/godot/export_templates/; fi
-      - name: Validate Godot project
-        run: godot --headless --path . --editor --quit
-      - name: Run core systemic smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test.gd
-      - name: Run locations and society smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v11.gd
-      - name: Run free-action smoke test
-        run: godot --headless --path . --script res://scripts/free_action_smoke_test.gd
-      - name: Run housing health migration smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v22.gd
-      - name: Run inheritance smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v23.gd
-      - name: Run learning smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v24.gd
-      - name: Run crafting smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v25.gd
-      - name: Run gathering farming smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v26.gd
-      - name: Run expanded crafting smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v27.gd
-      - name: Run NPC equipment smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v28.gd
-      - name: Run NPC trade smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v29.gd
-      - name: Run player trade smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v30.gd
-      - name: Run estate boat vampire smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v31.gd
-      - name: Run modular castle household smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v32.gd
-      - name: Run castle rooms and security smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v33.gd
-      - name: Run emergent scenario library smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v34.gd
-      - name: Run world variety and scenario-chain smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v35.gd
-      - name: Run physical object and injury combat smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v36.gd
-      - name: Run body interaction smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v37.gd
-      - name: Run witness and investigation smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v38.gd
-      - name: Run justice and evidence smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v39.gd
-      - name: Run player needs and animal ecology smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v40.gd
-      - name: Run livestock household smoke test
-        run: godot --headless --path . --script res://scripts/smoke_test_v41.gd
+          if [ -d /root/.local/share/godot/export_templates/4.6.3.stable ]; then
+            cp -a /root/.local/share/godot/export_templates/4.6.3.stable ~/.local/share/godot/export_templates/
+          fi
+
+      - name: Parse and smoke-test prototype
+        run: godot --headless --path . --script res://prototype/prototype_smoke_test.gd
+
+      - name: Boot prototype scene headless
+        run: godot --headless --path . --quit-after 5
+
       - name: Export Android debug APK
         run: |
           mkdir -p builds/android
-          godot --headless --path . --export-debug "Android" builds/android/Island-Life-debug.apk
-          test -s builds/android/Island-Life-debug.apk
+          godot --headless --path . --export-debug "Android" builds/android/Island-Life-Prototype-debug.apk
+          test -s builds/android/Island-Life-Prototype-debug.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Island-Life-Android-debug
-          path: builds/android/Island-Life-debug.apk
+          name: Island-Life-Prototype-Android
+          path: builds/android/Island-Life-Prototype-debug.apk
           if-no-files-found: error
