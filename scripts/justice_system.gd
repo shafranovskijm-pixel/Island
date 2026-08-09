@@ -6,18 +6,34 @@ var events:Array=[]
 func arrest(case:Dictionary)->Dictionary:
     if bool(state["arrested"]):return {"ok":false,"reason":"Уже задержан."}
     state["arrested"]=true;state["trial_pending"]=true
-    var severity=_severity(str(case.get("crime_type","assault")));state["fine_due"]=severity*12
+    var severity=_severity(_case_crime(case));state["fine_due"]=severity*12
     events.append({"type":"arrest","text":"Стража задерживает героя по делу %s."%case.get("id","")});return {"ok":true}
+
+func case_scores(case:Dictionary,suspect_id:String="player")->Dictionary:
+    var evidence_score:=0.0;var witness_score:=0.0
+    for e in case.get("evidence",[]):
+        var suspect=str(e.get("suspect_id",e.get("actor","")))
+        var weight=float(e.get("weight",.4))
+        if bool(e.get("destroyed",false)):weight*=.35
+        if suspect==suspect_id:evidence_score+=weight
+        elif suspect=="" and str(e.get("type","")) in ["body","blood","victim_blood"]:evidence_score+=weight*.18
+    for w in case.get("witnesses",[]):
+        if str(w.get("suspect_id",""))!=suspect_id:continue
+        witness_score+=float(w.get("confidence",0))*float(w.get("reliability",.6))
+    return {"evidence":minf(4.0,evidence_score),"witness":minf(3.0,witness_score),"total":minf(7.0,evidence_score+witness_score)}
 
 func resolve_trial(case:Dictionary,reputation:int,influence:int,coins:int)->Dictionary:
     if not bool(state["trial_pending"]):return {"ok":false,"reason":"Суда сейчас нет."}
-    var evidence=float(case.get("evidence_score",0));var witness=float(case.get("witness_score",0));var defense=maxf(0,reputation*.05+influence*.08)
-    var guilty=evidence+witness-defense>=1.25
+    var scored=case_scores(case,"player")
+    var evidence=float(case.get("evidence_score",scored["evidence"]));var witness=float(case.get("witness_score",scored["witness"]))
+    var defense=maxf(0,reputation*.05+influence*.08)
+    var prosecution=evidence+witness
+    var guilty=prosecution-defense>=1.25
     state["trial_pending"]=false;state["arrested"]=false
     if guilty:
-        var severity=_severity(str(case.get("crime_type","assault")));state["jailed"]=true;state["jail_days"]=severity*2;state["convictions"].append({"case":case.get("id",""),"crime":case.get("crime_type","")})
-        events.append({"type":"conviction","text":"Суд признаёт героя виновным. Назначены штраф и заключение."});return {"ok":true,"guilty":true,"jail_days":state["jail_days"],"fine":state["fine_due"]}
-    state["fine_due"]=0;events.append({"type":"acquittal","text":"Доказательств оказалось недостаточно. Героя отпускают."});return {"ok":true,"guilty":false}
+        var crime=_case_crime(case);var severity=_severity(crime);state["jailed"]=true;state["jail_days"]=severity*2;state["convictions"].append({"case":case.get("id",""),"crime":crime,"evidence":evidence,"witness":witness})
+        events.append({"type":"conviction","text":"Суд признаёт героя виновным. Назначены штраф и заключение."});return {"ok":true,"guilty":true,"jail_days":state["jail_days"],"fine":state["fine_due"],"evidence_score":evidence,"witness_score":witness}
+    state["fine_due"]=0;events.append({"type":"acquittal","text":"Доказательств оказалось недостаточно. Героя отпускают."});return {"ok":true,"guilty":false,"evidence_score":evidence,"witness_score":witness}
 
 func pay_fine(coins:int)->Dictionary:
     var due=int(state["fine_due"]);if due<=0:return {"ok":false,"reason":"Штрафа нет."}
@@ -45,6 +61,8 @@ func tick_day():
         state["jail_days"]=maxi(0,int(state["jail_days"])-1)
         if int(state["jail_days"])==0:state["jailed"]=false;events.append({"type":"released","text":"Срок заключения закончился."})
 
+func _case_crime(case:Dictionary)->String:
+    return str(case.get("crime_type",case.get("kind","assault")))
 func _severity(crime:String)->int:
     return {"robbery":2,"assault":2,"murder":5,"burglary":2,"arson":3,"kidnap":4}.get(crime,1)
 func drain()->Array:
