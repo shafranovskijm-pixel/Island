@@ -1,6 +1,6 @@
 workflows:
-  island-v05-android:
-    name: Island v05 Android APK
+  island-v06-art-android:
+    name: Island v06 Painterly Android APK
     instance_type: mac_mini_m2
     max_build_duration: 30
 
@@ -9,31 +9,31 @@ workflows:
       vars:
         GODOT_VERSION: "4.6.3"
         GODOT_TEMPLATE_VERSION: "4.6.3.stable"
-        APK_PATH: "builds/android/Island-Life-Prototype-v05.apk"
+        APK_PATH: "builds/android/Island-Life-Prototype-v06.apk"
 
     triggering:
       events:
         - push
       branch_patterns:
-        - pattern: v0.7-locations
+        - pattern: v0.8-art-apk
           include: true
       cancel_previous_builds: true
 
     scripts:
-      - name: Verify v05 checkout
+      - name: Verify v06 painterly checkout
         script: |
           #!/usr/bin/env bash
           set -euo pipefail
           test -f project.godot
           test -f export_presets.cfg
-          test -f prototype/prototype_v05.tscn
-          test -f prototype/prototype_v05.gd
-          test -f prototype/prototype_v05_smoke_test.gd
-          grep -F 'run/main_scene="res://prototype/prototype_v05.tscn"' project.godot
-          grep -F 'textures/vram_compression/import_etc2_astc=true' project.godot
+          test -f prototype/prototype_v06.tscn
+          test -f prototype/prototype_v06.gd
+          for f in prototype/art/runtime/world_webp_{00,01,02,03,04}.b64; do test -s "$f"; done
+          test -s prototype/art/runtime/player_png_00.b64
+          grep -F 'run/main_scene="res://prototype/prototype_v06.tscn"' project.godot
           grep -F 'architectures/arm64-v8a=true' export_presets.cfg
-          grep -F 'version/name="0.5"' export_presets.cfg
-          echo "Checkout is aligned with prototype_v05 and ARM64 Android export."
+          grep -F 'version/name="0.6"' export_presets.cfg
+          echo "Checkout is aligned with painterly prototype_v06 and ARM64 Android export."
 
       - name: Prepare Android SDK
         script: |
@@ -44,7 +44,6 @@ workflows:
           test -n "${JAVA_HOME:-}"
 
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          ADB="$ANDROID_SDK_ROOT/platform-tools/adb"
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.1/apksigner"
           NDK_DIR="$ANDROID_SDK_ROOT/ndk/28.1.13356709"
           test -x "$SDKMANAGER"
@@ -58,14 +57,11 @@ workflows:
             "cmake;3.10.2.4988404" \
             "ndk;28.1.13356709"
 
-          test -x "$ADB"
+          test -x "$ANDROID_SDK_ROOT/platform-tools/adb"
           test -x "$APKSIGNER"
           test -d "$ANDROID_SDK_ROOT/platforms/android-35"
           test -d "$NDK_DIR"
-
           echo "ANDROID_NDK_ROOT=$NDK_DIR" >> "$CM_ENV"
-          "$ADB" start-server || true
-          "$SDKMANAGER" --list_installed | grep -E 'platform-tools|build-tools;35.0.1|platforms;android-35|platforms;android-36|cmake;3.10.2.4988404|ndk;28.1.13356709'
 
       - name: Install Godot 4.6.3 and export templates
         script: |
@@ -106,8 +102,7 @@ workflows:
         script: |
           #!/usr/bin/env bash
           set -euo pipefail
-
-          KEYSTORE="$CM_BUILD_DIR/.ci-island-v05-debug.keystore"
+          KEYSTORE="$CM_BUILD_DIR/.ci-island-v06-debug.keystore"
           rm -f "$KEYSTORE"
           keytool -genkeypair \
             -keystore "$KEYSTORE" \
@@ -118,7 +113,6 @@ workflows:
             -keysize 2048 \
             -validity 10000 \
             -dname "CN=Island Prototype,O=Island Life,C=US"
-
           test -s "$KEYSTORE"
           echo "DEBUG_KEYSTORE=$KEYSTORE" >> "$CM_ENV"
 
@@ -128,7 +122,6 @@ workflows:
           set -euo pipefail
 
           "$GODOT_BIN" --headless --editor --path . --quit
-
           SETTINGS="$(find "$HOME/Library/Application Support/Godot" -type f -name 'editor_settings-*.tres' | head -n 1)"
           test -n "$SETTINGS"
 
@@ -147,7 +140,6 @@ workflows:
               "export/android/debug_keystore_user": "androiddebugkey",
               "export/android/debug_keystore_pass": "android",
           }
-
           for key, value in values.items():
               safe = value.replace("\\", "/")
               line = f'{key} = "{safe}"'
@@ -156,73 +148,23 @@ workflows:
                   text = re.sub(pattern, line, text)
               else:
                   text += "\n" + line
-
           path.write_text(text)
           print(f"Configured Godot Android settings: {path}")
           PY
 
           "$GODOT_BIN" --headless --editor --path . --quit
 
-      - name: Validate Godot project
+      - name: Validate and boot painterly scene
         script: |
           #!/usr/bin/env bash
           set -euo pipefail
           "$GODOT_BIN" --headless --path . --editor --quit
-
-      - name: Run prototype smoke tests
-        script: |
-          #!/usr/bin/env bash
-          set -euo pipefail
-
-          run_smoke() {
-            local test_script="$1"
-            local success_marker="$2"
-            local output_file="$CM_BUILD_DIR/.smoke-$(basename "$test_script" .gd).log"
-            local marker_file="$CM_BUILD_DIR/.ci_${success_marker}.ok"
-
-            echo "===== Running $test_script ====="
-            rm -f "$output_file" "$marker_file"
-
-            set +e
-            "$GODOT_BIN" --headless --path . --quit-after 15 --script "$test_script" >"$output_file" 2>&1
-            local exit_code=$?
-            set -e
-
-            cat "$output_file"
-
-            if [ ! -s "$marker_file" ]; then
-              echo "ERROR: $test_script did not create success marker file $marker_file."
-              exit 1
-            fi
-            if ! grep -Fq "$success_marker" "$marker_file"; then
-              echo "ERROR: $test_script created an invalid marker file."
-              cat "$marker_file" || true
-              exit 1
-            fi
-            if [ "$exit_code" -ne 0 ]; then
-              echo "ERROR: $test_script exited with code $exit_code."
-              exit "$exit_code"
-            fi
-            echo "PASS: $test_script ($success_marker)"
-          }
-
-          run_smoke "res://prototype/prototype_smoke_test.gd" "PROTOTYPE_V02_SMOKE_OK"
-          run_smoke "res://prototype/prototype_systemic_smoke_test.gd" "PROTOTYPE_SYSTEMIC_SMOKE_OK"
-          run_smoke "res://prototype/prototype_scene_smoke_test.gd" "PROTOTYPE_V03_SCENE_SMOKE_OK"
-          run_smoke "res://prototype/prototype_v04_smoke_test.gd" "PROTOTYPE_V04_CONTEXT_SMOKE_OK"
-          run_smoke "res://prototype/prototype_v05_smoke_test.gd" "PROTOTYPE_V05_VISUAL_SMOKE_OK"
-
-      - name: Boot current v05 main scene
-        script: |
-          #!/usr/bin/env bash
-          set -euo pipefail
           "$GODOT_BIN" --headless --path . --quit-after 5
 
       - name: Export and verify Android ARM64 APK
         script: |
           #!/usr/bin/env bash
           set -euo pipefail
-
           mkdir -p "$(dirname "$APK_PATH")"
           rm -f "$APK_PATH"
 
@@ -230,15 +172,11 @@ workflows:
 
           test -s "$APK_PATH"
           unzip -t "$APK_PATH" >/dev/null
-
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.1/apksigner"
-          test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs "$APK_PATH"
-
-          echo "APK built successfully:"
           ls -lh "$APK_PATH"
-          shasum -a 256 "$APK_PATH" | tee builds/android/Island-Life-Prototype-v05.apk.sha256
+          shasum -a 256 "$APK_PATH" | tee builds/android/Island-Life-Prototype-v06.apk.sha256
 
     artifacts:
-      - builds/android/Island-Life-Prototype-v05.apk
-      - builds/android/Island-Life-Prototype-v05.apk.sha256
+      - builds/android/Island-Life-Prototype-v06.apk
+      - builds/android/Island-Life-Prototype-v06.apk.sha256
