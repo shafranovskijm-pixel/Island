@@ -54,6 +54,16 @@ jobs:
         run: godot --headless --path . --script res://scripts/smoke_test_v33.gd
       - name: Run emergent scenario library smoke test
         run: godot --headless --path . --script res://scripts/smoke_test_v34.gd
+      - name: Run world variety and scenario-chain smoke test
+        run: godot --headless --path . --script res://scripts/smoke_test_v35.gd
+      - name: Run physical object and injury combat smoke test
+        run: godot --headless --path . --script res://scripts/smoke_test_v36.gd
+      - name: Run body interaction smoke test
+        run: godot --headless --path . --script res://scripts/smoke_test_v37.gd
+      - name: Run witness and investigation smoke test
+        run: godot --headless --path . --script res://scripts/smoke_test_v38.gd
+      - name: Run justice and evidence smoke test
+        run: godot --headless --path . --script res://scripts/smoke_test_v39.gd
       - name: Export Android debug APK
         run: |
           mkdir -p builds/android
