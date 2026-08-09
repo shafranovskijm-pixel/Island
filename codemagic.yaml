@@ -30,6 +30,7 @@ workflows:
           test -f prototype/prototype_v05.gd
           test -f prototype/prototype_v05_smoke_test.gd
           grep -F 'run/main_scene="res://prototype/prototype_v05.tscn"' project.godot
+          grep -F 'textures/vram_compression/import_etc2_astc=true' project.godot
           grep -F 'architectures/arm64-v8a=true' export_presets.cfg
           grep -F 'version/name="0.5"' export_presets.cfg
           echo "Checkout is aligned with prototype_v05 and ARM64 Android export."
@@ -41,13 +42,30 @@ workflows:
           test -n "${ANDROID_SDK_ROOT:-}"
           test -d "$ANDROID_SDK_ROOT"
           test -n "${JAVA_HOME:-}"
+
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          ADB="$ANDROID_SDK_ROOT/platform-tools/adb"
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.1/apksigner"
+          NDK_DIR="$ANDROID_SDK_ROOT/ndk/28.1.13356709"
           test -x "$SDKMANAGER"
-          if [ ! -x "$ANDROID_SDK_ROOT/build-tools/35.0.1/apksigner" ]; then
-            yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-            "$SDKMANAGER" "platform-tools" "build-tools;35.0.1" "platforms;android-35"
-          fi
-          "$SDKMANAGER" --list_installed | grep -E 'build-tools;35.0.1|platforms;android-35' || true
+
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" \
+            "platform-tools" \
+            "build-tools;35.0.1" \
+            "platforms;android-35" \
+            "platforms;android-36" \
+            "cmake;3.10.2.4988404" \
+            "ndk;28.1.13356709"
+
+          test -x "$ADB"
+          test -x "$APKSIGNER"
+          test -d "$ANDROID_SDK_ROOT/platforms/android-35"
+          test -d "$NDK_DIR"
+
+          echo "ANDROID_NDK_ROOT=$NDK_DIR" >> "$CM_ENV"
+          "$ADB" start-server || true
+          "$SDKMANAGER" --list_installed | grep -E 'platform-tools|build-tools;35.0.1|platforms;android-35|platforms;android-36|cmake;3.10.2.4988404|ndk;28.1.13356709'
 
       - name: Install Godot 4.6.3 and export templates
         script: |
