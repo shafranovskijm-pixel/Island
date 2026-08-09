@@ -100,9 +100,11 @@ jobs:
           PY
           "$GODOT_BIN" --headless --editor --path . --quit
 
-      - name: Validate mobile prototype script
+      - name: Validate mobile prototype scripts
         shell: bash
-        run: "$GODOT_BIN --headless --path . --script res://prototype/prototype_v04_smoke_test.gd"
+        run: |
+          "$GODOT_BIN" --headless --path . --script res://prototype/prototype_v04_smoke_test.gd
+          "$GODOT_BIN" --headless --path . --script res://prototype/prototype_v05_smoke_test.gd
 
       - name: Boot main scene headless
         shell: bash
@@ -113,16 +115,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p builds/android
-          "$GODOT_BIN" --headless --path . --export-debug "Android" builds/android/Island-Life-Prototype-v04.apk
-          test -s builds/android/Island-Life-Prototype-v04.apk
-          unzip -t builds/android/Island-Life-Prototype-v04.apk >/dev/null
+          "$GODOT_BIN" --headless --path . --export-debug "Android" builds/android/Island-Life-Prototype-v05.apk
+          test -s builds/android/Island-Life-Prototype-v05.apk
+          unzip -t builds/android/Island-Life-Prototype-v05.apk >/dev/null
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | tail -n 1)"
-          "$APKSIGNER" verify --verbose --print-certs builds/android/Island-Life-Prototype-v04.apk
+          "$APKSIGNER" verify --verbose --print-certs builds/android/Island-Life-Prototype-v05.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Island-Life-Prototype-v04-Slim-APK
-          path: builds/android/Island-Life-Prototype-v04.apk
+          name: Island-Life-Prototype-v05-Slim-APK
+          path: builds/android/Island-Life-Prototype-v05.apk
           if-no-files-found: error
           retention-days: 7
