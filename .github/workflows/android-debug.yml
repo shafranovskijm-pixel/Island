@@ -50,6 +50,8 @@ jobs:
         run: godot --headless --path . --script res://scripts/smoke_test_v31.gd
       - name: Run modular castle household smoke test
         run: godot --headless --path . --script res://scripts/smoke_test_v32.gd
+      - name: Run castle rooms and security smoke test
+        run: godot --headless --path . --script res://scripts/smoke_test_v33.gd
       - name: Export Android debug APK
         run: |
           mkdir -p builds/android
