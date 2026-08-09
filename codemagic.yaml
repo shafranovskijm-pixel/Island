@@ -1,0 +1,191 @@
+workflows:
+  island-v05-android:
+    name: Island v05 Android APK
+    instance_type: linux
+    max_build_duration: 60
+
+    environment:
+      ubuntu: 24.04
+      java: 17
+      vars:
+        GODOT_VERSION: "4.6.3"
+        GODOT_TEMPLATE_VERSION: "4.6.3.stable"
+        APK_PATH: "builds/android/Island-Life-Prototype-v05.apk"
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: v0.7-locations
+          include: true
+      cancel_previous_builds: true
+
+    scripts:
+      - name: Verify v05 checkout
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          test -f project.godot
+          test -f export_presets.cfg
+          test -f prototype/prototype_v05.tscn
+          test -f prototype/prototype_v05.gd
+          test -f prototype/prototype_v05_smoke_test.gd
+          grep -F 'run/main_scene="res://prototype/prototype_v05.tscn"' project.godot
+          grep -F 'architectures/arm64-v8a=true' export_presets.cfg
+          grep -F 'version/name="0.5"' export_presets.cfg
+          echo "Checkout is aligned with prototype_v05 and ARM64 Android export."
+
+      - name: Install Godot 4.6.3 and export templates
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          GODOT_ZIP="$CM_BUILD_DIR/.ci-godot.zip"
+          TEMPLATE_ZIP="$CM_BUILD_DIR/.ci-godot-templates.tpz"
+          GODOT_DIR="$CM_BUILD_DIR/.ci-godot"
+          TEMPLATE_TMP="$CM_BUILD_DIR/.ci-godot-templates"
+
+          rm -rf "$GODOT_DIR" "$TEMPLATE_TMP" "$GODOT_ZIP" "$TEMPLATE_ZIP"
+          mkdir -p "$GODOT_DIR" "$TEMPLATE_TMP"
+
+          curl --retry 5 --retry-delay 3 --fail --location \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" \
+            --output "$GODOT_ZIP"
+          curl --retry 5 --retry-delay 3 --fail --location \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" \
+            --output "$TEMPLATE_ZIP"
+
+          unzip -q "$GODOT_ZIP" -d "$GODOT_DIR"
+          unzip -q "$TEMPLATE_ZIP" -d "$TEMPLATE_TMP"
+
+          GODOT_BIN="$(find "$GODOT_DIR" -maxdepth 1 -type f -name 'Godot_v*_linux.x86_64' | head -n 1)"
+          test -n "$GODOT_BIN"
+          chmod +x "$GODOT_BIN"
+
+          TEMPLATE_DEST="$HOME/.local/share/godot/export_templates/$GODOT_TEMPLATE_VERSION"
+          mkdir -p "$TEMPLATE_DEST"
+          cp -R "$TEMPLATE_TMP/templates/." "$TEMPLATE_DEST/"
+
+          echo "GODOT_BIN=$GODOT_BIN" >> "$CM_ENV"
+          "$GODOT_BIN" --version
+          test -f "$TEMPLATE_DEST/android_debug.apk"
+
+      - name: Create Android debug keystore
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          KEYSTORE="$CM_BUILD_DIR/.ci-island-v05-debug.keystore"
+          rm -f "$KEYSTORE"
+          keytool -genkeypair \
+            -keystore "$KEYSTORE" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Island Prototype,O=Island Life,C=US"
+
+          test -s "$KEYSTORE"
+          echo "DEBUG_KEYSTORE=$KEYSTORE" >> "$CM_ENV"
+
+      - name: Import Godot project and configure Android SDK
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          test -n "${ANDROID_SDK_ROOT:-}"
+          test -d "$ANDROID_SDK_ROOT"
+          test -n "${JAVA_HOME:-}"
+
+          "$GODOT_BIN" --headless --editor --path . --quit
+
+          SETTINGS="$(find "$HOME/.config/godot" -type f -name 'editor_settings-*.tres' | head -n 1)"
+          test -n "$SETTINGS"
+
+          python3 - "$SETTINGS" <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          values = {
+              "export/android/java_sdk_path": os.environ["JAVA_HOME"],
+              "export/android/android_sdk_path": os.environ["ANDROID_SDK_ROOT"],
+              "export/android/debug_keystore": os.environ["DEBUG_KEYSTORE"],
+              "export/android/debug_keystore_user": "androiddebugkey",
+              "export/android/debug_keystore_pass": "android",
+          }
+
+          for key, value in values.items():
+              safe = value.replace("\\", "/")
+              line = f'{key} = "{safe}"'
+              pattern = rf'(?m)^{re.escape(key)} = .*?$'
+              if re.search(pattern, text):
+                  text = re.sub(pattern, line, text)
+              else:
+                  text += "\n" + line
+
+          path.write_text(text)
+          print(f"Configured Godot Android settings: {path}")
+          PY
+
+          "$GODOT_BIN" --headless --editor --path . --quit
+
+      - name: Validate Godot project
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          "$GODOT_BIN" --headless --path . --editor --quit
+
+      - name: Run prototype smoke tests
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          TESTS=(
+            "res://prototype/prototype_smoke_test.gd"
+            "res://prototype/prototype_systemic_smoke_test.gd"
+            "res://prototype/prototype_scene_smoke_test.gd"
+            "res://prototype/prototype_v04_smoke_test.gd"
+            "res://prototype/prototype_v05_smoke_test.gd"
+          )
+
+          for test_script in "${TESTS[@]}"; do
+            echo "Running $test_script"
+            "$GODOT_BIN" --headless --path . --script "$test_script"
+          done
+
+      - name: Boot current v05 main scene
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          "$GODOT_BIN" --headless --path . --quit-after 5
+
+      - name: Export and verify Android ARM64 APK
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          mkdir -p "$(dirname "$APK_PATH")"
+          rm -f "$APK_PATH"
+
+          "$GODOT_BIN" --headless --path . --export-debug "Android" "$APK_PATH"
+
+          test -s "$APK_PATH"
+          unzip -t "$APK_PATH" >/dev/null
+
+          APKSIGNER="$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK_PATH"
+
+          echo "APK built successfully:"
+          ls -lh "$APK_PATH"
+          sha256sum "$APK_PATH" | tee builds/android/Island-Life-Prototype-v05.apk.sha256
+
+    artifacts:
+      - builds/android/Island-Life-Prototype-v05.apk
+      - builds/android/Island-Life-Prototype-v05.apk.sha256
