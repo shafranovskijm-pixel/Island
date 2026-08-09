@@ -1,65 +1,150 @@
 extends RefCounted
 
-var recipes:={
-    "campfire":{"profession":"survival","theory":"foraging","practice":1.0,"location":["wilderness","fisher_cove","slums"],"inputs":{"wood":3.0},"tools":[],"output":{"kind":"structure","name":"костёр"}},
-    "simple_meal":{"profession":"cooking","theory":"foraging","practice":1.0,"location":["tavern","player_home","camp"],"inputs":{"food":2.0},"tools":["knife"],"output":{"kind":"food","name":"простая еда","hunger":25}},
-    "wooden_crate":{"profession":"carpentry","theory":"construction","practice":2.0,"location":["workshop","market","player_home"],"inputs":{"wood":6.0},"tools":["hammer"],"output":{"kind":"container","name":"деревянный ящик","capacity":8}},
-    "repair_kit":{"profession":"crafting","theory":"construction","practice":2.0,"location":["workshop"],"inputs":{"wood":2.0,"tools":1.0},"tools":["hammer"],"output":{"kind":"tool","name":"ремонтный набор"}},
-    "fishing_rod":{"profession":"carpentry","theory":"sailing","practice":2.0,"location":["workshop","fisher_cove"],"inputs":{"wood":4.0,"cloth":1.0},"tools":["knife"],"output":{"kind":"tool","name":"удочка","tool_type":"fishing"}},
-    "lockpick":{"profession":"thievery","theory":"locks","practice":3.0,"location":["workshop","slums"],"inputs":{"tools":1.0},"tools":["knife"],"output":{"kind":"tool","name":"отмычка","tool_type":"lockpick"}},
-    "healing_draught":{"profession":"medicine","theory":"medicine","practice":3.0,"location":["temple","player_home"],"inputs":{"medicine":2.0,"food":1.0},"tools":[],"output":{"kind":"medicine","name":"лечебный отвар","heal":20}},
-    "ritual_chalk":{"profession":"occult","theory":"occult","practice":4.0,"location":["occult_lodge","crypt"],"inputs":{"stone":1.0,"cloth":1.0},"tools":[],"output":{"kind":"ritual","name":"ритуальный мел"}}
-}
+const CraftingCatalog=preload("res://scripts/crafting_catalog.gd")
 
+var catalog=CraftingCatalog.new()
+var recipes:Dictionary={}
 var known_recipes:Dictionary={}
 var crafted_count:Dictionary={}
 var events:Array=[]
 
+func _init():
+    recipes=catalog.all()
+
 func unlock_from_knowledge(learning):
     for id in recipes.keys():
-        var theory=str(recipes[id].get("theory",""))
-        if theory=="" or float(learning.theory.get(theory,0))>=1.0:known_recipes[id]=true
+        var r:Dictionary=recipes[id]
+        var theory=str(r.get("theory",""))
+        var need=float(r.get("theory_required",0.0))
+        if theory=="" or need<=0.0 or _theory_level(learning,theory)>=need:
+            known_recipes[id]=true
 
-func can_craft(id:String,learning,resources:Dictionary,inventory:Array,location_id:String)->Dictionary:
+func can_craft(id:String,learning,resources:Dictionary,inventory:Array,location_id:String,stations:Array=[])->Dictionary:
     if not recipes.has(id):return {"ok":false,"reason":"Неизвестный рецепт."}
     unlock_from_knowledge(learning)
-    if not bool(known_recipes.get(id,false)):return {"ok":false,"reason":"Ты ещё не знаешь, как это сделать."}
+    if not bool(known_recipes.get(id,false)):return {"ok":false,"reason":"Нужно сначала изучить теорию этого ремесла."}
     var r:Dictionary=recipes[id]
-    var allowed:Array=r.get("location",[])
-    if not allowed.is_empty() and location_id not in allowed:return {"ok":false,"reason":"Здесь нет подходящих условий для работы."}
-    var profession=str(r.get("profession",""));var need=float(r.get("practice",0))
-    if float(learning.practice.get(profession,0))<need:return {"ok":false,"reason":"Не хватает практического опыта."}
-    for key in r["inputs"].keys():
-        if float(resources.get(key,0))<float(r["inputs"][key]):return {"ok":false,"reason":"Не хватает ресурса: %s."%key}
-    for tool in r.get("tools",[]):
-        if not _has_tool(inventory,str(tool)):return {"ok":false,"reason":"Нужен инструмент: %s."%tool}
-    return {"ok":true}
 
-func craft(id:String,learning,resources:Dictionary,inventory:Array,location_id:String)->Dictionary:
-    var check=can_craft(id,learning,resources,inventory,location_id)
+    var station=str(r.get("station","hand"))
+    var station_pool:Array=stations.duplicate()
+    if station_pool.is_empty():
+        station_pool=["hand",location_id]
+    if station!="hand" and station not in station_pool and station!=location_id:
+        return {"ok":false,"reason":"Нужна станция: %s."%station}
+
+    var allowed:Array=r.get("location",[])
+    if not allowed.is_empty() and location_id not in allowed:
+        return {"ok":false,"reason":"Здесь нет подходящих условий для работы."}
+
+    var profession=str(r.get("profession",""))
+    var practice_need=float(r.get("practice_required",r.get("practice",0.0)))
+    if practice_need>0.0 and _practice_level(learning,profession)<practice_need:
+        return {"ok":false,"reason":"Не хватает практики: %s %.1f/%.1f."%[profession,_practice_level(learning,profession),practice_need]}
+
+    for key in r.get("inputs",{}).keys():
+        var have=float(resources.get(key,0.0));var need=float(r["inputs"][key])
+        if have+0.001<need:return {"ok":false,"reason":"Не хватает ресурса: %s (%.1f/%.1f)."%[key,have,need]}
+
+    for tool in r.get("tools",[]):
+        if _find_tool_index(inventory,str(tool))<0:return {"ok":false,"reason":"Нужен инструмент: %s."%tool}
+
+    return {"ok":true,"station":station}
+
+func craft(id:String,learning,resources:Dictionary,inventory:Array,location_id:String,stations:Array=[])->Dictionary:
+    var check=can_craft(id,learning,resources,inventory,location_id,stations)
     if not bool(check.get("ok",false)):return check
     var r:Dictionary=recipes[id]
-    for key in r["inputs"].keys():resources[key]=float(resources.get(key,0))-float(r["inputs"][key])
-    var item:Dictionary=r["output"].duplicate(true)
-    item["id"]="crafted_%s_%d"%[id,int(Time.get_ticks_msec())]
-    inventory.append(item)
-    crafted_count[id]=int(crafted_count.get(id,0))+1
-    learning.practice[str(r["profession"])]=float(learning.practice.get(str(r["profession"]),0))+0.4
-    events.append({"type":"craft","text":"Создано: %s."%item.get("name",id),"recipe":id})
-    return {"ok":true,"item":item}
+    for key in r.get("inputs",{}).keys():
+        resources[key]=float(resources.get(key,0.0))-float(r["inputs"][key])
 
-func _has_tool(inventory:Array,tool:String)->bool:
-    for item in inventory:
-        if str(item.get("tool_type",""))==tool:return true
+    var broken_tools=_damage_required_tools(inventory,r.get("tools",[]),1.0)
+    var item:Dictionary=r["output"].duplicate(true)
+    item["id"]="crafted_%s_%d"%[id,Time.get_ticks_usec()]
+    item["recipe_id"]=id
+    item["crafted"]=true
+    _add_or_stack(inventory,item)
+
+    crafted_count[id]=int(crafted_count.get(id,0))+1
+    var profession=str(r.get("profession",""))
+    if profession!="":
+        learning.study_progress[profession]=float(learning.study_progress.get(profession,0.0))+0.45
+    events.append({"type":"craft","text":"Создано: %s."%item.get("name",id),"recipe":id,"category":r.get("category","")})
+    for tool_name in broken_tools:
+        events.append({"type":"tool_break","text":"Инструмент сломался: %s."%tool_name})
+    return {"ok":true,"item":item,"broken_tools":broken_tools,"station":check.get("station","hand")}
+
+func recipes_by_category(category:String,learning=null)->Array:
+    if learning!=null:unlock_from_knowledge(learning)
+    var out:Array=[]
+    for id in recipes.keys():
+        if str(recipes[id].get("category",""))!=category:continue
+        if learning!=null and not bool(known_recipes.get(id,false)):continue
+        var entry=recipes[id].duplicate(true);entry["id"]=id;out.append(entry)
+    out.sort_custom(func(a,b):return str(a["output"].get("name",a["id"]))<str(b["output"].get("name",b["id"])))
+    return out
+
+func category_ids()->Array:
+    return catalog.categories()
+
+func category_name(id:String)->String:
+    return catalog.category_name(id)
+
+func _theory_level(learning,skill:String)->float:
+    if learning==null:return 0.0
+    return float(learning.knowledge.get(skill,0.0))
+
+func _practice_level(learning,skill:String)->float:
+    if learning==null:return 0.0
+    return float(learning.study_progress.get(skill,0.0))
+
+func _find_tool_index(inventory:Array,tool:String)->int:
+    for i in inventory.size():
+        var item:Dictionary=inventory[i]
+        if float(item.get("durability",1.0))<=0.0:continue
+        var tt=str(item.get("tool_type",""))
+        if tt==tool:return i
+        if tool=="knife" and tt in ["knife","blade"]:return i
+        if tool=="hammer" and tt in ["hammer","smith_hammer"]:return i
+        if tool=="fire_source" and tt in ["fire_source","torch"]:return i
         var n=str(item.get("name","")).to_lower()
-        if tool=="knife" and "нож" in n:return true
-        if tool=="hammer" and "молот" in n:return true
-    return false
+        if tool=="knife" and ("нож" in n or "клин" in n):return i
+        if tool=="hammer" and "молот" in n:return i
+    return -1
+
+func _damage_required_tools(inventory:Array,tools:Array,amount:float)->Array:
+    var broken:Array=[]
+    for tool in tools:
+        var idx=_find_tool_index(inventory,str(tool))
+        if idx<0:continue
+        if not inventory[idx].has("durability"):continue
+        inventory[idx]["durability"]=float(inventory[idx]["durability"])-amount
+        if float(inventory[idx]["durability"])<=0.0:
+            broken.append(str(inventory[idx].get("name",tool)))
+            inventory.remove_at(idx)
+    return broken
+
+func _add_or_stack(inventory:Array,item:Dictionary):
+    var kind=str(item.get("kind",""))
+    var quantity=float(item.get("quantity",1.0))
+    if kind in ["resource","food","medicine","seed","ammo","drink"]:
+        for existing in inventory:
+            if str(existing.get("kind",""))!=kind:continue
+            var same=false
+            if kind=="resource":same=str(existing.get("resource",""))==str(item.get("resource",""))
+            else:same=str(existing.get("subtype",existing.get("name","")))==str(item.get("subtype",item.get("name","")))
+            if same:
+                existing["quantity"]=float(existing.get("quantity",1.0))+quantity
+                return
+    inventory.append(item)
 
 func drain()->Array:
     var out=events.duplicate(true);events.clear();return out
 
-func serialize()->Dictionary:return {"known_recipes":known_recipes,"crafted_count":crafted_count}
+func serialize()->Dictionary:
+    return {"known_recipes":known_recipes,"crafted_count":crafted_count}
+
 func restore(data:Dictionary):
-    var k=data.get("known_recipes",{});if typeof(k)==TYPE_DICTIONARY:known_recipes=k
-    var c=data.get("crafted_count",{});if typeof(c)==TYPE_DICTIONARY:crafted_count=c
+    var k=data.get("known_recipes",{})
+    if typeof(k)==TYPE_DICTIONARY:known_recipes=k
+    var c=data.get("crafted_count",{})
+    if typeof(c)==TYPE_DICTIONARY:crafted_count=c
