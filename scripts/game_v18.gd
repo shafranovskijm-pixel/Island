@@ -3,6 +3,7 @@ extends "res://scripts/game_v17.gd"
 const ConditionalPlanEngine=preload("res://scripts/conditional_plan_engine.gd")
 var conditional_plans=ConditionalPlanEngine.new()
 var pending_condition_plan:Dictionary={}
+var pending_check_timer:=0.0
 
 func _submit_free_action():
     var text=free_action_text.strip_edges();free_action_mode=false;free_action_text=""
@@ -13,7 +14,7 @@ func _submit_free_action():
         if bool(cp.get("ok",false)):
             _execute_conditional_plan(cp,world)
             return
-    super._submit_free_action_text(text)
+    _submit_free_action_text(text)
 
 func _submit_free_action_text(text:String):
     var world=_action_world_snapshot_extended()
@@ -34,7 +35,7 @@ func _execute_conditional_plan(plan:Dictionary,world:Dictionary):
     history.record(day,hour,"conditional_plan","План: %s — %s."%[plan.get("raw",""),branch],{})
     if selected.is_empty():
         pending_condition_plan=plan
-        _notify("Условие пока не выполнено. План можно будет повторить позже.")
+        _notify("Условие пока не выполнено. План будет ждать подходящего момента.")
         return
     var valid=free_actions.validate(selected,world)
     if not bool(valid.get("ok",false)):
@@ -63,7 +64,9 @@ func _action_world_snapshot_extended()->Dictionary:
 
 func _process(delta):
     super._process(delta)
-    if not pending_condition_plan.is_empty() and int(Time.get_ticks_msec())%1200<20:
+    pending_check_timer+=delta
+    if not pending_condition_plan.is_empty() and pending_check_timer>=1.0:
+        pending_check_timer=0.0
         var world=_action_world_snapshot_extended()
         if conditional_plans.evaluate(pending_condition_plan.get("condition",{}),world):
             var plan=pending_condition_plan.duplicate(true);pending_condition_plan={}
