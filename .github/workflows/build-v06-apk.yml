@@ -1,0 +1,162 @@
+name: Build v06 Android APK
+
+on:
+  push:
+    branches:
+      - v0.8-art-apk
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GODOT_VERSION: "4.6.3"
+      GODOT_TEMPLATE_VERSION: "4.6.3.stable"
+      APK_PATH: "builds/android/Island-Life-Prototype-v06.apk"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Verify painterly art payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f prototype/prototype_v06.gd
+          test -f prototype/prototype_v06.tscn
+          grep -F 'run/main_scene="res://prototype/prototype_v06.tscn"' project.godot
+          cat prototype/art/runtime/world_webp_{00,01,02,03,04}.b64 | base64 -d > /tmp/island-world.webp
+          cat prototype/art/runtime/player_png_00.b64 | base64 -d > /tmp/island-player.png
+          test -s /tmp/island-world.webp
+          test -s /tmp/island-player.png
+          file /tmp/island-world.webp /tmp/island-player.png
+
+      - name: Prepare Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -n "$SDK_ROOT"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" \
+            "platform-tools" \
+            "build-tools;35.0.1" \
+            "platforms;android-35"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          test -x "$SDK_ROOT/build-tools/35.0.1/apksigner"
+
+      - name: Install Godot and export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/godot" "$RUNNER_TEMP/templates"
+          curl -fL --retry 5 \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" \
+            -o "$RUNNER_TEMP/godot.zip"
+          curl -fL --retry 5 \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" \
+            -o "$RUNNER_TEMP/templates.tpz"
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP/godot"
+          unzip -q "$RUNNER_TEMP/templates.tpz" -d "$RUNNER_TEMP/templates"
+          GODOT_BIN="$RUNNER_TEMP/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          chmod +x "$GODOT_BIN"
+          TEMPLATE_DEST="$HOME/.local/share/godot/export_templates/$GODOT_TEMPLATE_VERSION"
+          mkdir -p "$TEMPLATE_DEST"
+          cp -R "$RUNNER_TEMP/templates/templates/." "$TEMPLATE_DEST/"
+          echo "GODOT_BIN=$GODOT_BIN" >> "$GITHUB_ENV"
+          "$GODOT_BIN" --version
+          test -f "$TEMPLATE_DEST/android_debug.apk"
+
+      - name: Create debug keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/island-v06-debug.keystore"
+          keytool -genkeypair \
+            -keystore "$KEYSTORE" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Island Prototype,O=Island Life,C=US"
+          echo "DEBUG_KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
+
+      - name: Configure Godot Android editor settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GODOT_BIN" --headless --editor --path . --quit
+          SETTINGS="$(find "$HOME/.config/godot" -type f -name 'editor_settings-*.tres' | head -n 1)"
+          test -n "$SETTINGS"
+          python3 - "$SETTINGS" <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          values = {
+              "export/android/java_sdk_path": os.environ["JAVA_HOME"],
+              "export/android/android_sdk_path": os.environ["ANDROID_SDK_ROOT"],
+              "export/android/debug_keystore": os.environ["DEBUG_KEYSTORE"],
+              "export/android/debug_keystore_user": "androiddebugkey",
+              "export/android/debug_keystore_pass": "android",
+          }
+          for key, value in values.items():
+              safe = value.replace("\\", "/")
+              line = f'{key} = "{safe}"'
+              pattern = rf'(?m)^{re.escape(key)} = .*?$'
+              if re.search(pattern, text):
+                  text = re.sub(pattern, line, text)
+              else:
+                  text += "\n" + line
+          path.write_text(text)
+          print(path)
+          PY
+          "$GODOT_BIN" --headless --editor --path . --quit
+
+      - name: Validate and boot v06 scene
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GODOT_BIN" --headless --path . --editor --quit
+          "$GODOT_BIN" --headless --path . --quit-after 4
+
+      - name: Export ARM64 debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$APK_PATH")"
+          rm -f "$APK_PATH"
+          "$GODOT_BIN" --headless --path . --export-debug "Android" "$APK_PATH"
+          test -s "$APK_PATH"
+          unzip -t "$APK_PATH" >/dev/null
+          "$ANDROID_SDK_ROOT/build-tools/35.0.1/apksigner" verify --verbose --print-certs "$APK_PATH"
+          sha256sum "$APK_PATH" | tee builds/android/Island-Life-Prototype-v06.apk.sha256
+          ls -lh "$APK_PATH"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Island-Life-Prototype-v06-APK
+          path: |
+            builds/android/Island-Life-Prototype-v06.apk
+            builds/android/Island-Life-Prototype-v06.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
