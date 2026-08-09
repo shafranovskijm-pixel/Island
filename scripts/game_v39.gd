@@ -38,7 +38,9 @@ func current_player_case()->Dictionary:
 func request_trial():
     var c=current_player_case();if c.is_empty():_notify("Нет активного дела против тебя.");return
     if not bool(justice.state.get("trial_pending",false)):_notify("Сначала стража должна официально задержать тебя.");return
-    var copy=c.duplicate(true);copy["evidence_score"]=float(c.get("evidence_score",0))-evidence_actions.defense_modifier(str(c.get("id","")))
+    var copy=c.duplicate(true);var scores=justice.case_scores(c,"player")
+    copy["evidence_score"]=maxf(0,float(scores.get("evidence",0))-evidence_actions.defense_modifier(str(c.get("id",""))))
+    copy["witness_score"]=float(scores.get("witness",0))
     var result=justice.resolve_trial(copy,reputation,influence,coins)
     if bool(result.get("guilty",false)):_notify("Виновен. Заключение %d дн., штраф %d."%[result.get("jail_days",0),result.get("fine",0)])
     else:_notify("Суд оправдал тебя из-за недостатка доказательств.")
