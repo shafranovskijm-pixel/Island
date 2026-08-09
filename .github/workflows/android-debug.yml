@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - v0.7-locations
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -50,3 +53,4 @@ jobs:
           name: Island-Life-Prototype-Android
           path: builds/android/Island-Life-Prototype-debug.apk
           if-no-files-found: error
+          retention-days: 7
