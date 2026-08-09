@@ -1,6 +1,7 @@
 extends SceneTree
 
 const Systems = preload("res://prototype/prototype_systems.gd")
+const CI_MARKER = "PROTOTYPE_SYSTEMIC_SMOKE_OK"
 
 func _init():
     var s = Systems.new()
@@ -66,5 +67,13 @@ func _init():
     var beg_again = s.resolve_action("попросить милостыню", {"near_npc":"villager", "coins":0, "hour":12.0, "near_dock":false})
     assert(not bool(beg_again["ok"]))
 
-    print("PROTOTYPE_SYSTEMIC_SMOKE_OK")
+    _mark_success(CI_MARKER)
     quit(0)
+
+func _mark_success(marker):
+    var marker_path = "res://.ci_%s.ok" % marker
+    var file = FileAccess.open(marker_path, FileAccess.WRITE)
+    assert(file != null)
+    file.store_string(marker)
+    file.close()
+    print(marker)
