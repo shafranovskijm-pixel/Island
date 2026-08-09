@@ -1,6 +1,6 @@
 [application]
 config/name="Island Life Prototype"
-run/main_scene="res://prototype/prototype_v03.tscn"
+run/main_scene="res://prototype/prototype_v04.tscn"
 config/features=PackedStringArray("4.6")
 
 [display]
