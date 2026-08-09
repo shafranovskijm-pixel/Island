@@ -23,10 +23,19 @@ jobs:
             cp -a /root/.local/share/godot/export_templates/4.6.3.stable ~/.local/share/godot/export_templates/
           fi
 
-      - name: Parse and smoke-test prototype
+      - name: Validate Godot project
+        run: godot --headless --path . --editor --quit
+
+      - name: Run legacy prototype smoke test
         run: godot --headless --path . --script res://prototype/prototype_smoke_test.gd
 
-      - name: Boot prototype scene headless
+      - name: Run systemic world smoke test
+        run: godot --headless --path . --script res://prototype/prototype_systemic_smoke_test.gd
+
+      - name: Run integrated scene smoke test
+        run: godot --headless --path . --script res://prototype/prototype_scene_smoke_test.gd
+
+      - name: Boot current main scene headless
         run: godot --headless --path . --quit-after 5
 
       - name: Export Android debug APK
