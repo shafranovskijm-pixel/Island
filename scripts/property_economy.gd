@@ -17,7 +17,11 @@ func setup():
     ]
 
 func _property(kind:String,name:String,owner:String,pos:Vector2,slots:int,wage:float,output:Dictionary)->Dictionary:
-    var p={"id":"property_%d"%next_id,"kind":kind,"name":name,"owner":owner,"pos":pos,"worker_slots":slots,"workers":[],"wage":wage,"output":output,"condition":100.0,"profit":0.0,"active":true}
+    var p={
+        "id":"property_%d"%next_id,"kind":kind,"name":name,"owner":owner,"pos":pos,
+        "worker_slots":slots,"workers":[],"wage":wage,"output":output,"condition":100.0,
+        "profit":0.0,"cash":35.0,"active":true,"maintenance_due":0.0,"days_unpaid":0
+    }
     next_id+=1
     return p
 
@@ -27,13 +31,63 @@ func tick(npcs:Array,production,day:int,hour:float):
     _assign_workers(npcs)
     for p in properties:
         if not bool(p.get("active",true)):continue
-        var efficiency=_efficiency(p,npcs)
-        var output:Dictionary=p.get("output",{})
-        for resource in output.keys():production.resources[resource]+=float(output[resource])*efficiency
-        var wage_bill=float(p.get("wage",0))*p["workers"].size()
-        p["profit"]=maxf(0.0,_gross_value(output,production)*efficiency-wage_bill)
-        p["condition"]=maxf(0.0,float(p["condition"])-0.2)
-        if float(p["condition"])<30:_log("%s приходит в упадок и работает хуже."%p["name"])
+        _operate_property(p,npcs,production)
+
+func _operate_property(p:Dictionary,npcs:Array,production):
+    var efficiency=_efficiency(p,npcs,production)
+    var output:Dictionary=p.get("output",{})
+    for resource in output.keys():production.resources[resource]+=float(output[resource])*efficiency
+
+    var wage_bill=float(p.get("wage",0))*p["workers"].size()
+    var gross=_gross_value(output,production)*efficiency
+    if str(p["kind"]) in ["inn","shop"]:
+        gross+=6.0+float(p["workers"].size())*2.0
+    p["cash"]=float(p.get("cash",0))+gross
+
+    var paid=_pay_workers(p,npcs,wage_bill)
+    var maintenance=maxf(0.5,float(p["worker_slots"])*0.35)
+    p["maintenance_due"]=maintenance
+    if float(p["cash"])>=maintenance:
+        p["cash"]-=maintenance
+        p["condition"]=minf(100.0,float(p["condition"])+0.15)
+    else:
+        p["condition"]=maxf(0.0,float(p["condition"])-1.1)
+
+    p["profit"]=maxf(0.0,gross-paid-maintenance)
+    _pay_owner(p,npcs,float(p["profit"])*0.55)
+
+    if float(p["condition"])<30:_log("%s приходит в упадок и работает хуже."%p["name"])
+    if float(p["condition"])<=5:
+        p["active"]=false;_log("%s остановлено: здание почти разрушено."%p["name"])
+
+func _pay_workers(p:Dictionary,npcs:Array,total:float)->float:
+    if p["workers"].is_empty():return 0.0
+    var each=float(p.get("wage",0))
+    var paid:=0.0
+    for id in p["workers"]:
+        if float(p["cash"])<each:break
+        var idx=_npc_index(npcs,str(id))
+        if idx<0:continue
+        p["cash"]-=each
+        npcs[idx]["money"]=int(npcs[idx].get("money",0))+int(round(each))
+        npcs[idx]["stress"]=maxf(0.0,float(npcs[idx].get("stress",0))-1.5)
+        paid+=each
+    if paid+0.01<total:
+        p["days_unpaid"]=int(p.get("days_unpaid",0))+1
+        for id in p["workers"]:
+            var idx=_npc_index(npcs,str(id))
+            if idx>=0:npcs[idx]["stress"]=minf(100.0,float(npcs[idx].get("stress",0))+5.0)
+        _log("На %s задерживают зарплату."%p["name"])
+    else:p["days_unpaid"]=0
+    return paid
+
+func _pay_owner(p:Dictionary,npcs:Array,amount:float):
+    if amount<=0:return
+    var owner=str(p.get("owner",""))
+    var idx=_npc_index(npcs,owner)
+    if idx>=0:
+        npcs[idx]["money"]=int(npcs[idx].get("money",0))+int(round(amount))
+        npcs[idx]["influence"]=int(npcs[idx].get("influence",0))+int(amount/30.0)
 
 func _assign_workers(npcs:Array):
     var assigned:Dictionary={}
@@ -59,11 +113,17 @@ func _best_worker(npcs:Array,kind:String,assigned:Dictionary)->int:
         if kind=="quarry" and ("камен" in role or "шах" in role):return i
         if kind=="workshop" and ("ремес" in role or "кузне" in role):return i
         if kind in ["inn","shop"] and ("торгов" in role or "тракт" in role):return i
+        if kind=="mansion" and "стро" in role:return i
     return -1
 
-func _efficiency(p:Dictionary,npcs:Array)->float:
+func _efficiency(p:Dictionary,npcs:Array,production)->float:
     var filled=float(p["workers"].size())/maxf(float(p["worker_slots"]),1.0)
-    return clampf(filled*(float(p["condition"])/100.0),0.0,1.0)
+    var condition=float(p["condition"])/100.0
+    var tools_factor:=1.0
+    if str(p["kind"]) in ["farm","lumberyard","quarry","workshop"]:
+        tools_factor=clampf(float(production.resources.get("tools",0))/6.0,0.25,1.0)
+        production.resources["tools"]=maxf(0.0,float(production.resources.get("tools",0))-0.12*filled)
+    return clampf(filled*condition*tools_factor,0.0,1.0)
 
 func _gross_value(output:Dictionary,production)->float:
     var total:=0.0
@@ -78,6 +138,15 @@ func create_property(kind:String,name:String,owner:String,pos:Vector2)->Dictiona
     if not presets.has(kind):return {}
     var d=presets[kind];var p=_property(kind,name,owner,pos,int(d[0]),float(d[1]),d[2]);properties.append(p);_log("Появилось новое владение: %s."%name);return p
 
+func repair_property(property_id:String,production)->Dictionary:
+    for p in properties:
+        if str(p["id"])!=property_id:continue
+        if production.resources["wood"]<8 or production.resources["stone"]<4:return {"ok":false,"reason":"Не хватает материалов для ремонта."}
+        if int(production.jobs["builder"])<1:return {"ok":false,"reason":"Нет доступных строителей."}
+        production.resources["wood"]-=8;production.resources["stone"]-=4;p["condition"]=minf(100,float(p["condition"])+30);p["active"]=true
+        _log("%s отремонтировано."%p["name"]);return {"ok":true}
+    return {"ok":false,"reason":"Владение не найдено."}
+
 func ownership_summary(owner:String)->Array:
     var out:Array=[]
     for p in properties:
@@ -85,9 +154,13 @@ func ownership_summary(owner:String)->Array:
     return out
 
 func _alive(npcs:Array,id:String)->bool:
-    for n in npcs:
-        if str(n.get("id",""))==id:return bool(n.get("alive",true))
-    return false
+    var idx=_npc_index(npcs,id)
+    return idx>=0 and bool(npcs[idx].get("alive",true))
+
+func _npc_index(npcs:Array,id:String)->int:
+    for i in npcs.size():
+        if str(npcs[i].get("id",""))==id:return i
+    return -1
 
 func _log(text:String):
     events.append({"text":text})
