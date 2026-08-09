@@ -74,3 +74,5 @@ jobs:
           path: builds/android/Island-Life-Prototype-v05.apk
           if-no-files-found: error
           retention-days: 7
+
+# v05 visual slice isolated push validation
