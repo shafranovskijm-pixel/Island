@@ -1,0 +1,24 @@
+name: Stable APK Push Build
+
+on:
+  push:
+    branches:
+      - apk-stable-v04
+  workflow_dispatch:
+
+concurrency:
+  group: stable-apk-push
+  cancel-in-progress: true
+
+jobs:
+  verify-runner:
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runner sanity
+        run: |
+          uname -a
+          test -f project.godot
+      - name: Record build snapshot
+        run: |
+          echo "Stable mobile prototype snapshot ready for Android export."
