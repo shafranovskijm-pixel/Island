@@ -160,8 +160,11 @@ workflows:
             local test_script="$1"
             local success_marker="$2"
             local output_file="$CM_BUILD_DIR/.smoke-$(basename "$test_script" .gd).log"
+            local marker_file="$CM_BUILD_DIR/.ci_${success_marker}.ok"
 
             echo "===== Running $test_script ====="
+            rm -f "$output_file" "$marker_file"
+
             set +e
             "$GODOT_BIN" --headless --path . --quit-after 15 --script "$test_script" >"$output_file" 2>&1
             local exit_code=$?
@@ -169,15 +172,20 @@ workflows:
 
             cat "$output_file"
 
-            if ! grep -Fq "$success_marker" "$output_file"; then
-              echo "ERROR: $test_script did not emit required marker $success_marker within 15 seconds."
+            if [ ! -s "$marker_file" ]; then
+              echo "ERROR: $test_script did not create success marker file $marker_file."
+              exit 1
+            fi
+            if ! grep -Fq "$success_marker" "$marker_file"; then
+              echo "ERROR: $test_script created an invalid marker file."
+              cat "$marker_file" || true
               exit 1
             fi
             if [ "$exit_code" -ne 0 ]; then
               echo "ERROR: $test_script exited with code $exit_code."
               exit "$exit_code"
             fi
-            echo "PASS: $test_script"
+            echo "PASS: $test_script ($success_marker)"
           }
 
           run_smoke "res://prototype/prototype_smoke_test.gd" "PROTOTYPE_V02_SMOKE_OK"
