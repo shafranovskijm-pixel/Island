@@ -48,6 +48,10 @@ jobs:
         shell: bash
         run: godot --headless --path . --script res://scripts/smoke_test_v23.gd
 
+      - name: Run learning system smoke test
+        shell: bash
+        run: godot --headless --path . --script res://scripts/smoke_test_v24.gd
+
       - name: Export Android debug APK
         shell: bash
         run: |
