@@ -11,13 +11,9 @@ on:
       - '.github/workflows/android-debug.yml'
   workflow_dispatch:
 
-concurrency:
-  group: island-v05-android-release
-  cancel-in-progress: true
-
 jobs:
   android-release:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Checkout v05 source
