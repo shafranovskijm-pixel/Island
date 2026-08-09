@@ -72,6 +72,10 @@ jobs:
         shell: bash
         run: godot --headless --path . --script res://scripts/smoke_test_v29.gd
 
+      - name: Run player trade and smuggling smoke test
+        shell: bash
+        run: godot --headless --path . --script res://scripts/smoke_test_v30.gd
+
       - name: Export Android debug APK
         shell: bash
         run: |
