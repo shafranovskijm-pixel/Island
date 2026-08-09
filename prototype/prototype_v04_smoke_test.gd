@@ -2,6 +2,7 @@ extends SceneTree
 
 const Systems = preload("res://prototype/prototype_systems_v04.gd")
 const Prototype = preload("res://prototype/prototype_v04.gd")
+const CI_MARKER = "PROTOTYPE_V04_CONTEXT_SMOKE_OK"
 
 func _init():
     var s = Systems.new()
@@ -82,5 +83,14 @@ func _init():
     assert(bool(live_dock_context["near_dock"]))
     assert(p.systems.suggest_actions(live_dock_context).has("попроситься матросом"))
 
-    print("PROTOTYPE_V04_CONTEXT_SMOKE_OK")
+    p.free()
+    _mark_success(CI_MARKER)
     quit(0)
+
+func _mark_success(marker):
+    var marker_path = "res://.ci_%s.ok" % marker
+    var file = FileAccess.open(marker_path, FileAccess.WRITE)
+    assert(file != null)
+    file.store_string(marker)
+    file.close()
+    print(marker)
