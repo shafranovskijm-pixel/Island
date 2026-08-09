@@ -8,7 +8,9 @@ var last_regen_day:=-1
 func setup():
     if not nodes.is_empty(): return
     nodes=[
+        _node("branches","Сухой валежник",Vector2(1080,860),"wood",26.0,1.4,"","foraging"),
         _node("tree","Сосновая роща",Vector2(1180,930),"wood",55.0,4.0,"axe","woodcutting"),
+        _node("loose_stone","Каменная осыпь",Vector2(1110,360),"stone",24.0,1.2,"","foraging"),
         _node("quarry","Каменистый склон",Vector2(1190,315),"stone",48.0,3.0,"pickaxe","mining"),
         _node("herbs","Луговые травы",Vector2(860,370),"herbs",36.0,2.0,"","foraging"),
         _node("fish","Рыбное место",Vector2(390,825),"fish",45.0,3.0,"fishing_rod","fishing"),
@@ -25,7 +27,7 @@ func tick(day:int):
     last_regen_day=day
     for n in nodes:
         var regen=float(n["max_amount"])*0.04
-        if n["kind"] in ["herbs","fish","wild_food"]:regen=float(n["max_amount"])*0.12
+        if n["kind"] in ["herbs","fish","wild_food","branches","loose_stone"]:regen=float(n["max_amount"])*0.12
         n["amount"]=minf(float(n["max_amount"]),float(n["amount"])+regen)
 
 func nearby(pos:Vector2,range:float=110.0)->Dictionary:
@@ -58,7 +60,9 @@ func gather(node_id:String,inventory:Array,knowledge,skills:Dictionary,day:int,h
 
 func _has_tool(inventory:Array,tool:String)->bool:
     for item in inventory:
-        if str(item.get("tool_type",""))==tool:return true
+        var tt=str(item.get("tool_type",""))
+        if tt==tool:return true
+        if tool=="fishing_rod" and tt in ["fishing_rod","fishing"]:return true
         var n=str(item.get("name","")).to_lower()
         if tool=="axe" and "топор" in n:return true
         if tool=="pickaxe" and ("кирк" in n or "кайло" in n):return true
