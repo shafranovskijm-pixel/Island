@@ -93,6 +93,11 @@ func add_pressure(source:String,target:String,amount:float):
     if relations.has(source) and relations[source].has(target):
         relations[source][target]=clampf(float(relations[source][target])-amount,-100.0,100.0)
 
+func tension(a:String,b:String)->float:
+    if relations.has(a) and relations[a].has(b):
+        return clampf(-float(relations[a][b]),0.0,100.0)
+    return 0.0
+
 func serialize()->Dictionary:
     return {"factions":factions,"relations":relations,"next_tick_day":next_tick_day,"next_tick_hour":next_tick_hour}
 
