@@ -38,6 +38,9 @@ jobs:
       - name: Run integrated scene smoke test
         run: godot --headless --path . --script res://prototype/prototype_scene_smoke_test.gd
 
+      - name: Run contextual mobile action smoke test
+        run: godot --headless --path . --script res://prototype/prototype_v04_smoke_test.gd
+
       - name: Boot current main scene headless
         run: godot --headless --path . --quit-after 5
 
