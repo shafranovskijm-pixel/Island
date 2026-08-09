@@ -1,12 +1,14 @@
 name: Playable Prototype Android
 
 on:
-  push:
-    branches:
-      - v0.7-locations
   pull_request:
     branches:
       - main
+    paths:
+      - 'prototype/**'
+      - 'project.godot'
+      - 'export_presets.cfg'
+      - '.github/workflows/android-debug.yml'
   workflow_dispatch:
 
 concurrency:
