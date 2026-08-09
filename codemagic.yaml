@@ -2,7 +2,7 @@ workflows:
   island-v05-android:
     name: Island v05 Android APK
     instance_type: mac_mini_m2
-    max_build_duration: 60
+    max_build_duration: 30
 
     environment:
       java: 17
@@ -156,18 +156,35 @@ workflows:
           #!/usr/bin/env bash
           set -euo pipefail
 
-          TESTS=(
-            "res://prototype/prototype_smoke_test.gd"
-            "res://prototype/prototype_systemic_smoke_test.gd"
-            "res://prototype/prototype_scene_smoke_test.gd"
-            "res://prototype/prototype_v04_smoke_test.gd"
-            "res://prototype/prototype_v05_smoke_test.gd"
-          )
+          run_smoke() {
+            local test_script="$1"
+            local success_marker="$2"
+            local output_file="$CM_BUILD_DIR/.smoke-$(basename "$test_script" .gd).log"
 
-          for test_script in "${TESTS[@]}"; do
-            echo "Running $test_script"
-            "$GODOT_BIN" --headless --path . --script "$test_script"
-          done
+            echo "===== Running $test_script ====="
+            set +e
+            "$GODOT_BIN" --headless --path . --quit-after 15 --script "$test_script" >"$output_file" 2>&1
+            local exit_code=$?
+            set -e
+
+            cat "$output_file"
+
+            if ! grep -Fq "$success_marker" "$output_file"; then
+              echo "ERROR: $test_script did not emit required marker $success_marker within 15 seconds."
+              exit 1
+            fi
+            if [ "$exit_code" -ne 0 ]; then
+              echo "ERROR: $test_script exited with code $exit_code."
+              exit "$exit_code"
+            fi
+            echo "PASS: $test_script"
+          }
+
+          run_smoke "res://prototype/prototype_smoke_test.gd" "PROTOTYPE_V02_SMOKE_OK"
+          run_smoke "res://prototype/prototype_systemic_smoke_test.gd" "PROTOTYPE_SYSTEMIC_SMOKE_OK"
+          run_smoke "res://prototype/prototype_scene_smoke_test.gd" "PROTOTYPE_V03_SCENE_SMOKE_OK"
+          run_smoke "res://prototype/prototype_v04_smoke_test.gd" "PROTOTYPE_V04_CONTEXT_SMOKE_OK"
+          run_smoke "res://prototype/prototype_v05_smoke_test.gd" "PROTOTYPE_V05_VISUAL_SMOKE_OK"
 
       - name: Boot current v05 main scene
         script: |
