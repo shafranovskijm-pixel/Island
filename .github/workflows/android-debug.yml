@@ -40,6 +40,10 @@ jobs:
         shell: bash
         run: godot --headless --path . --script res://scripts/free_action_smoke_test.gd
 
+      - name: Run housing health migration smoke test
+        shell: bash
+        run: godot --headless --path . --script res://scripts/smoke_test_v22.gd
+
       - name: Export Android debug APK
         shell: bash
         run: |
