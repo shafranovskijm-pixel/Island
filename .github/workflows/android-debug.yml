@@ -44,6 +44,10 @@ jobs:
         shell: bash
         run: godot --headless --path . --script res://scripts/smoke_test_v22.gd
 
+      - name: Run inheritance and vacancy smoke test
+        shell: bash
+        run: godot --headless --path . --script res://scripts/smoke_test_v23.gd
+
       - name: Export Android debug APK
         shell: bash
         run: |
