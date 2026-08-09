@@ -1,0 +1,26 @@
+extends SceneTree
+
+const Prototype = preload("res://prototype/prototype_v02.gd")
+
+func _init():
+    var p = Prototype.new()
+    assert(p.npcs.size() >= 6)
+    assert(str(p.dog["name"]) == "Серко")
+    assert(not p.rumor_heard)
+    p.player = Vector2(785,555)
+    p.interact()
+    assert(p.rumor_heard)
+    p.player = Vector2(520,720)
+    p.interact()
+    assert(p.dog_friend)
+    p.player = Vector2(1260,785)
+    p.interact()
+    assert(p.campfire_lit)
+    p.player = Vector2(755,585)
+    p.interact()
+    assert(str(p.held_item) == "бутылка")
+    p.player = Vector2(100,100)
+    p.action()
+    assert(str(p.held_item) == "осколок")
+    print("PROTOTYPE_V02_SMOKE_OK")
+    quit(0)
