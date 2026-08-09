@@ -12,18 +12,22 @@ func _init():
     market_stock={"stone_axe":1,"stone_pickaxe":1,"wooden_hammer":2,"stone_hoe":1,"fishing_rod":1,"stone_knife":2}
 
 func tick(npcs:Array,properties:Array,production,day:int,hour:float)->Dictionary:
-    if day==last_day or hour<7.2:return {"npcs":npcs,"stock":market_stock}
+    if day==last_day or hour<7.2:
+        _refresh_worker_factors(npcs)
+        return {"npcs":npcs,"stock":market_stock}
     last_day=day
     _ensure_npc_equipment(npcs)
     _wear_work_tools(npcs,properties,day,hour)
     _workshop_production(npcs,properties,production,day,hour)
     _equip_workers(npcs,production,day,hour)
+    _refresh_worker_factors(npcs)
     return {"npcs":npcs,"stock":market_stock}
 
 func _ensure_npc_equipment(npcs:Array):
     for n in npcs:
         if not n.has("equipment"):n["equipment"]=[]
         if not n.has("tool_shortage_days"):n["tool_shortage_days"]=0
+        if not n.has("work_tool_factor"):n["work_tool_factor"]=1.0
 
 func _required_tool(npc:Dictionary)->String:
     var role=str(npc.get("role","")).to_lower()
@@ -71,6 +75,7 @@ func _workshop_production(npcs:Array,properties:Array,production,day:int,hour:fl
 
     var capacity=mini(3,active_workshops+artisan_count)
     var priority=_shortage_priority(npcs)
+    if priority.is_empty():return
     for k in capacity:
         var recipe_id=_recipe_for_tool(priority[k%priority.size()])
         if recipe_id=="":continue
@@ -86,7 +91,9 @@ func _shortage_priority(npcs:Array)->Array:
         if not bool(n.get("alive",true)):continue
         var t=_required_tool(n)
         if t!="" and _tool_index(n.get("equipment",[]),t)<0:counts[t]=int(counts.get(t,0))+1
-    var keys=counts.keys()
+    var keys:Array=[]
+    for key in counts.keys():
+        if int(counts[key])>0:keys.append(key)
     keys.sort_custom(func(a,b):return int(counts[a])>int(counts[b]))
     return keys
 
@@ -129,6 +136,10 @@ func _equip_workers(npcs:Array,production,day:int,hour:float):
         events.append({"day":day,"hour":hour,"type":"npc_purchase","npc_id":n["id"],"text":"%s купил рабочий инструмент: %s."%[n["name"],_recipe_name(recipe_id)]})
         npcs[i]=n
 
+func _refresh_worker_factors(npcs:Array):
+    for i in npcs.size():
+        npcs[i]["work_tool_factor"]=worker_tool_factor(npcs[i])
+
 func worker_tool_factor(npc:Dictionary)->float:
     var required=_required_tool(npc)
     if required=="":return 1.0
@@ -155,7 +166,7 @@ func _make_tool(recipe_id:String)->Dictionary:
 func _tool_index(equipment:Array,tool:String)->int:
     for i in equipment.size():
         var item:Dictionary=equipment[i]
-        if float(item.get("durability",1.0))<=0:return -1
+        if float(item.get("durability",1.0))<=0:continue
         var tt=str(item.get("tool_type",""))
         if tt==tool:return i
         if tool=="fishing_rod" and tt in ["fishing_rod","fishing"]:return i
