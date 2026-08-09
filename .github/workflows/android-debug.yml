@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - v0.4-social-sandbox
+      - v0.7-locations
   workflow_dispatch:
 
 jobs:
@@ -27,9 +28,13 @@ jobs:
         shell: bash
         run: godot --headless --path . --editor --quit
 
-      - name: Run systemic smoke test
+      - name: Run core systemic smoke test
         shell: bash
         run: godot --headless --path . --script res://scripts/smoke_test.gd
+
+      - name: Run locations and society smoke test
+        shell: bash
+        run: godot --headless --path . --script res://scripts/smoke_test_v11.gd
 
       - name: Export Android debug APK
         shell: bash
