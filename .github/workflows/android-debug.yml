@@ -56,6 +56,10 @@ jobs:
         shell: bash
         run: godot --headless --path . --script res://scripts/smoke_test_v25.gd
 
+      - name: Run gathering and farming smoke test
+        shell: bash
+        run: godot --headless --path . --script res://scripts/smoke_test_v26.gd
+
       - name: Export Android debug APK
         shell: bash
         run: |
