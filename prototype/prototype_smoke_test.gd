@@ -1,6 +1,7 @@
 extends SceneTree
 
 const Prototype = preload("res://prototype/prototype_v02.gd")
+const CI_MARKER = "PROTOTYPE_V02_SMOKE_OK"
 
 func _init():
     var p = Prototype.new()
@@ -22,5 +23,14 @@ func _init():
     p.player = Vector2(100,100)
     p.action()
     assert(str(p.held_item) == "осколок")
-    print("PROTOTYPE_V02_SMOKE_OK")
+    p.free()
+    _mark_success(CI_MARKER)
     quit(0)
+
+func _mark_success(marker):
+    var marker_path = "res://.ci_%s.ok" % marker
+    var file = FileAccess.open(marker_path, FileAccess.WRITE)
+    assert(file != null)
+    file.store_string(marker)
+    file.close()
+    print(marker)
