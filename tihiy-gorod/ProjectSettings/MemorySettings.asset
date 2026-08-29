@@ -1,0 +1,14 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!3010102281 &1
+MemorySettings:
+  m_ObjectHideFlags: 0
+  m_EditorTempMemoryMain: -1
+  m_EditorTempMemoryWorker: -1
+  m_TempAllocatorMain: -1
+  m_TempAllocatorWorker: -1
+  m_TempAllocatorJob: -1
+  m_TempAllocatorGfx: -1
+  m_TempAllocatorCloudWorker: -1
+  m_JobTempAlloc: -1
+  m_JobTempAllocReduction: 0
